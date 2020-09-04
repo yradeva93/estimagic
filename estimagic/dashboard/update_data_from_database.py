@@ -21,8 +21,8 @@ def update_data_from_database(
     """While flag contains True check the database and update the ColumnDataSources.
 
     Args:
-            doc (bokeh.Document): used for adding the next_tick_callback
-            flag (np.array): set to False as signal to terminate by the button
+    doc (bokeh.Document): used for adding the next_tick_callback
+    flag (np.array): set to False as signal to terminate by the button
     database (sqlalchemy.MetaData): Bound metadata object.
     update_frequency (float): Number of seconds to wait between updates.
     update_chunk (int): Number of values to add at each update.
