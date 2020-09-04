@@ -1,5 +1,8 @@
 """Callbacks for the monitoring app."""
 from functools import partial
+from threading import Thread
+
+from tornado import gen
 
 from estimagic.logging.database_utilities import read_new_rows
 from estimagic.logging.database_utilities import transpose_nested_list
@@ -93,9 +96,9 @@ def activation_callback(
     criterion_cds = doc.get_model_by_name("criterion_history_cds")
     param_cds = doc.get_model_by_name("params_history_cds")
 
-    if new is True:
+    if new:
         plot_new_data = partial(
-            _update_monitoring_tab,
+            _update_monitoring_tab_in_new_thread,
             criterion_cds=criterion_cds,
             param_cds=param_cds,
             database=database,
@@ -104,6 +107,7 @@ def activation_callback(
             tables=tables,
             start_params=start_params,
             update_chunk=update_chunk,
+            doc=doc,
         )
         callback_dict["plot_periodic_data"] = doc.add_periodic_callback(
             plot_new_data, period_milliseconds=1000 * update_frequency,
@@ -122,6 +126,34 @@ def activation_callback(
         button.label = "Restart Plot"
 
 
+def _update_monitoring_tab_in_new_thread(
+    database,
+    criterion_cds,
+    param_cds,
+    session_data,
+    tables,
+    rollover,
+    start_params,
+    update_chunk,
+    doc,
+):
+    partialed = partial(
+        _update_monitoring_tab,
+        criterion_cds=criterion_cds,
+        param_cds=param_cds,
+        database=database,
+        session_data=session_data,
+        rollover=rollover,
+        tables=tables,
+        start_params=start_params,
+        update_chunk=update_chunk,
+        doc=doc,
+    )
+
+    thread = Thread(target=partialed)
+    thread.start()
+
+
 def _update_monitoring_tab(
     database,
     criterion_cds,
@@ -131,6 +163,7 @@ def _update_monitoring_tab(
     rollover,
     start_params,
     update_chunk,
+    doc,
 ):
     """Callback to look up new entries in the database tables and plot them.
 
@@ -164,15 +197,19 @@ def _update_monitoring_tab(
         "iteration": [id_ for i, id_ in enumerate(data["rowid"]) if i not in missing],
         "criterion": [val for i, val in enumerate(data["value"]) if i not in missing],
     }
-    criterion_cds.stream(crit_data, rollover=rollover)
 
     # update the parameter plots
     param_names = start_params["name"].tolist()
     params_data = _create_params_data_for_update(data, param_names)
-    param_cds.stream(params_data, rollover=rollover)
-
     # update last retrieved
     session_data["last_retrieved"] = new_last
+
+    doc.add_next_tick_callback(
+        partial(_stream_data, cds=criterion_cds, new_data=crit_data)
+    )
+    doc.add_next_tick_callback(
+        partial(_stream_data, cds=param_cds, new_data=params_data)
+    )
 
 
 def _create_params_data_for_update(data, param_names):
@@ -205,3 +242,8 @@ def _reset_column_data_sources(cds_list):
     for cds in cds_list:
         column_names = cds.data.keys()
         cds.data = {name: [] for name in column_names}
+
+
+@gen.coroutine
+def _stream_data(cds, new_data):
+    cds.stream(new_data)
