@@ -452,7 +452,7 @@ def _get_output_for_optimizer(
 
     if "criterion" in task:
         crit = new_criterion[primary]
-        crit = crit if np.isscalar(crit) else np.array(crit)
+        crit = crit if np.isscalar(crit) or isinstance(crit, dict) else np.array(crit)
         crit = crit if direction == "minimize" else -crit
 
     if "derivative" in task:
